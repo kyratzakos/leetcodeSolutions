@@ -1,0 +1,47 @@
+name: Cleanup Merged Branches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install GitHub CLI
+        run: sudo apt-get install gh -y
+
+      - name: Delete old merged branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Fetching merged PR branches..."
+          merged_branches=$(gh pr list --state merged --json headRefName --jq '.[].headRefName' | sort)
+
+          to_delete=()
+          for branch in $merged_branches; do
+            if [[ "$branch" != "main" && "$branch" != "master" ]]; then
+              to_delete+=("$branch")
+            fi
+          done
+
+          keep_last=3
+          delete_count=$((${#to_delete[@]} - $keep_last))
+
+          if [ $delete_count -gt 0 ]; then
+            for ((i=0; i<$delete_count; i++)); do
+              echo "Deleting branch: ${to_delete[$i]}"
+              git push origin --delete "${to_delete[$i]}" || echo "Failed to delete ${to_delete[$i]}"
+            done
+          else
+            echo "Nothing to delete"
+          fi
